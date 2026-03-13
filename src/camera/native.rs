@@ -1,6 +1,6 @@
 use crate::camera::protocol::PixelFormat;
 use crate::camera::{CameraDescriptor, CameraOrigin, FramePacket};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use ccap::{PixelFormat as CcapPixelFormat, Provider};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::{
@@ -36,71 +36,87 @@ impl NativeCameraStream {
 }
 
 pub fn list_native_sources() -> Result<Vec<CameraDescriptor>> {
-    let devices = Provider::get_devices()?;
-    Ok(devices
-        .into_iter()
-        .map(|device| {
-            let best_resolution = device
-                .supported_resolutions
-                .iter()
-                .max_by_key(|resolution| resolution.width * resolution.height)
-                .cloned();
-            CameraDescriptor {
-                id: format!("native:{}", device.name),
-                name: device.name,
-                width: best_resolution
-                    .as_ref()
-                    .map(|resolution| resolution.width)
-                    .unwrap_or_default(),
-                height: best_resolution
-                    .as_ref()
-                    .map(|resolution| resolution.height)
-                    .unwrap_or_default(),
-                nominal_fps: None,
-                origin: CameraOrigin::Native,
-            }
-        })
-        .collect())
+    let provider = Provider::new()?;
+    let device_names = provider.list_devices()?;
+    let mut sources = Vec::new();
+
+    for (index, fallback_name) in device_names.into_iter().enumerate() {
+        if let Some(source) = probe_native_source(index as i32, &fallback_name) {
+            sources.push(source);
+        }
+    }
+
+    Ok(sources)
 }
 
 pub fn open_native_camera(source: &CameraDescriptor) -> Result<NativeCameraStream> {
-    let uri = source
-        .id
-        .strip_prefix("native:")
-        .context("invalid native source id")?
-        .to_owned();
+    let native_index = parse_native_source_index(&source.id)?;
 
     let (tx, rx) = bounded(2);
+    let (startup_tx, startup_rx) = bounded(1);
     let stop_flag = Arc::new(AtomicBool::new(false));
     let thread_stop = stop_flag.clone();
     let source_name = source.name.clone();
 
     let join_handle = thread::spawn(move || {
-        if let Err(error) = capture_loop(uri, source_name, tx, thread_stop) {
+        let result = capture_loop(native_index, source_name, tx, thread_stop, Some(startup_tx));
+        if let Err(error) = &result {
             eprintln!("native camera stream ended: {error:?}");
         }
     });
 
-    Ok(NativeCameraStream {
-        rx,
-        stop_flag,
-        join_handle: Some(join_handle),
-    })
+    match startup_rx
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap_or_else(|_| Err("camera startup timed out".to_owned()))
+    {
+        Ok(()) => Ok(NativeCameraStream {
+            rx,
+            stop_flag,
+            join_handle: Some(join_handle),
+        }),
+        Err(error) => {
+            stop_flag.store(true, Ordering::Relaxed);
+            let _ = join_handle.join();
+            Err(anyhow!(error))
+        }
+    }
 }
 
 fn capture_loop(
-    device_name: String,
+    device_index: i32,
     source_name: String,
     tx: Sender<FramePacket>,
     stop_flag: Arc<AtomicBool>,
+    startup_tx: Option<Sender<std::result::Result<(), String>>>,
 ) -> Result<()> {
-    let mut provider = Provider::with_device_name(&device_name)?;
-    provider.open()?;
-    provider
-        .set_pixel_format(CcapPixelFormat::Rgb24)
-        .or_else(|_| provider.set_pixel_format(CcapPixelFormat::Bgr24))
-        .ok();
-    provider.start_capture()?;
+    let mut startup_tx = startup_tx;
+    let mut provider = match Provider::with_device(device_index) {
+        Ok(provider) => provider,
+        Err(error) => {
+            if let Some(startup_tx) = startup_tx.take() {
+                let _ = startup_tx.send(Err(format!(
+                    "Failed to open native camera index {device_index}: {error}"
+                )));
+            }
+            return Err(anyhow!(
+                "Failed to open native camera index {device_index}: {error}"
+            ));
+        }
+    };
+    select_preview_pixel_format(&mut provider);
+    if let Err(error) = provider.start_capture() {
+        if let Some(startup_tx) = startup_tx.take() {
+            let _ = startup_tx.send(Err(format!(
+                "Failed to start native camera index {device_index}: {error}"
+            )));
+        }
+        return Err(anyhow!(
+            "Failed to start native camera index {device_index}: {error}"
+        ));
+    }
+    if let Some(startup_tx) = startup_tx.take() {
+        let _ = startup_tx.send(Ok(()));
+    }
     let mut sequence = 0u64;
     let start = Instant::now();
 
@@ -129,6 +145,72 @@ fn capture_loop(
     Ok(())
 }
 
+fn select_preview_pixel_format(provider: &mut Provider) {
+    provider
+        .set_pixel_format(CcapPixelFormat::Rgb24)
+        .or_else(|_| provider.set_pixel_format(CcapPixelFormat::Bgr24))
+        .or_else(|_| provider.set_pixel_format(CcapPixelFormat::Rgba32))
+        .or_else(|_| provider.set_pixel_format(CcapPixelFormat::Bgra32))
+        .ok();
+}
+
+fn probe_native_source(index: i32, fallback_name: &str) -> Option<CameraDescriptor> {
+    let mut provider = Provider::with_device(index).ok()?;
+    let info = provider.device_info().ok();
+    let source_name = info
+        .as_ref()
+        .map(|details| details.name.clone())
+        .unwrap_or_else(|| fallback_name.to_owned());
+    let best_resolution = info.as_ref().and_then(|details| {
+        details
+            .supported_resolutions
+            .iter()
+            .max_by_key(|resolution| resolution.width * resolution.height)
+            .cloned()
+    });
+    select_preview_pixel_format(&mut provider);
+    if provider.start_capture().is_err() {
+        return None;
+    }
+    let _ = provider.stop_capture();
+
+    let label = match best_resolution {
+        Some(ref resolution) => {
+            format!(
+                "{source_name} [native #{index}, {}x{}]",
+                resolution.width, resolution.height
+            )
+        }
+        None => format!("{source_name} [native #{index}]"),
+    };
+
+    Some(CameraDescriptor {
+        id: native_source_id(index),
+        name: label,
+        width: best_resolution
+            .as_ref()
+            .map(|resolution| resolution.width)
+            .unwrap_or_default(),
+        height: best_resolution
+            .as_ref()
+            .map(|resolution| resolution.height)
+            .unwrap_or_default(),
+        nominal_fps: None,
+        origin: CameraOrigin::Native,
+    })
+}
+
+fn native_source_id(index: i32) -> String {
+    format!("native-index:{index}")
+}
+
+fn parse_native_source_index(id: &str) -> Result<i32> {
+    id.strip_prefix("native-index:")
+        .context("invalid native source id")?
+        .parse::<i32>()
+        .context("invalid native source index")
+}
+
 fn normalize_frame(frame: &ccap::VideoFrame, data: Vec<u8>) -> Result<(PixelFormat, Vec<u8>)> {
     match frame.pixel_format() {
         CcapPixelFormat::Rgb24 => Ok((PixelFormat::Rgb8, data)),
@@ -154,5 +236,16 @@ fn normalize_frame(frame: &ccap::VideoFrame, data: Vec<u8>) -> Result<(PixelForm
             Ok((PixelFormat::Rgb8, rgb))
         }
         other => anyhow::bail!("unsupported native pixel format: {:?}", other),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{native_source_id, parse_native_source_index};
+
+    #[test]
+    fn native_source_id_round_trips() {
+        let id = native_source_id(7);
+        assert_eq!(parse_native_source_index(&id).unwrap(), 7);
     }
 }

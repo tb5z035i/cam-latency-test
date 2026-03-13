@@ -66,7 +66,13 @@ impl LatencyApp {
         match camera::list_native_sources() {
             Ok(mut native) => {
                 sources.splice(0..0, native.drain(..));
-                self.status_message = format!("Found {} native camera(s).", sources.len());
+                self.status_message = format!(
+                    "Found {} native camera source(s) ready for preview.",
+                    sources
+                        .iter()
+                        .filter(|source| matches!(source.origin, CameraOrigin::Native))
+                        .count()
+                );
             }
             Err(error) => {
                 self.status_message = format!("Failed to enumerate cameras: {error:#}");

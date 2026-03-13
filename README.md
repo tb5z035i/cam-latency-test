@@ -53,6 +53,8 @@ If auto-detection keeps failing, the GUI surfaces a persistent warning.
 ### Built in
 
 - native camera backend through `ccap-rs`
+- native sources are labeled with a stable `native #<index>` suffix in the UI so duplicate device
+  names can still be distinguished
 
 ### Extensible
 
