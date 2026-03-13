@@ -1,0 +1,73 @@
+name: build-main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build-${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            runner: ubuntu-latest
+            archive_name: cam-latency-test-linux-amd64.tar.gz
+          - name: darwin-arm64
+            runner: macos-14
+            archive_name: cam-latency-test-darwin-arm64.tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.83.0
+        uses: dtolnay/rust-toolchain@1.83.0
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            g++ \
+            pkg-config \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxi-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev
+
+      - name: Build main application
+        run: cargo build --release --locked --bin cam_latency_test
+
+      - name: Build adapter stub
+        run: cargo build --release --manifest-path adapters/adapter-stub/Cargo.toml --bin camera_adapter_stub
+
+      - name: Package release archive
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dist/package
+          cp README.md dist/package/
+          cp target/release/cam_latency_test dist/package/
+          cp adapters/adapter-stub/target/release/camera_adapter_stub dist/package/
+          tar -C dist/package -czf "dist/${{ matrix.archive_name }}" .
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.archive_name }}
+          if-no-files-found: error

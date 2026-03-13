@@ -87,6 +87,24 @@ This keeps local Linux builds working in the provided environment.
 cargo test --tests
 ```
 
+## CI / release automation
+
+The repository includes GitHub Actions workflows for:
+
+- **pushes to `main`**: build release packages for:
+  - Linux amd64
+  - macOS arm64
+- **tag pushes** (for example `v0.1.0`): build the same packages, create a GitHub release, and
+  upload the packaged binaries as release assets
+
+The release packages currently include:
+
+- `cam_latency_test`
+- `camera_adapter_stub`
+
+The separate `adapters/realsense-example/` project is **not** built in CI release packaging
+because it requires the external `librealsense2` SDK/runtime.
+
 ## Adapter protocol overview
 
 The app expects line-delimited JSON over `stdio`.

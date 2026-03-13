@@ -141,6 +141,8 @@ Best-effort only:
 - checksum validation
 - modular latency math
 - synthetic decode / warped image tests
+- GitHub Actions build automation for main-branch commits
+- GitHub Actions tag-triggered packaging and release publishing
 
 ### Manual
 
@@ -151,3 +153,19 @@ Best-effort only:
 - confirm instant + average latency,
 - confirm warning behavior on persistent detection failure,
 - confirm adapter discovery / launch path.
+
+## Delivery automation
+
+Add GitHub Actions workflows that:
+
+1. build release binaries on pushes to `main`,
+2. target at least:
+   - Linux amd64
+   - macOS arm64
+3. package the main application binary and the generic adapter-stub example,
+4. upload those packages as workflow artifacts on `main`,
+5. on version-tag pushes, create a GitHub release and attach the packaged binaries as release
+   assets.
+
+The separate RealSense adapter example should stay out of the release build path because it depends
+on the external RealSense SDK.
