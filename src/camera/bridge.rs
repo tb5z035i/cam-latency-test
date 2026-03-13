@@ -1,6 +1,4 @@
-use crate::camera::protocol::{
-    AdapterCommand, AdapterMessage, AdapterSourceInfo,
-};
+use crate::camera::protocol::{AdapterCommand, AdapterMessage, AdapterSourceInfo};
 use crate::camera::{CameraDescriptor, CameraOrigin, FramePacket};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine;
@@ -42,9 +40,12 @@ impl AdapterCameraStream {
 pub fn probe_adapter(command_line: &str) -> Result<Vec<CameraDescriptor>> {
     let mut child = spawn_adapter(command_line)?;
     let stdin = child.stdin.as_mut().context("missing adapter stdin")?;
-    send_command(stdin, &AdapterCommand::Hello {
-        protocol_version: PROTOCOL_VERSION,
-    })?;
+    send_command(
+        stdin,
+        &AdapterCommand::Hello {
+            protocol_version: PROTOCOL_VERSION,
+        },
+    )?;
     send_command(stdin, &AdapterCommand::ListSources)?;
 
     let stdout = child.stdout.take().context("missing adapter stdout")?;
@@ -80,7 +81,10 @@ pub fn probe_adapter(command_line: &str) -> Result<Vec<CameraDescriptor>> {
     result.ok_or_else(|| anyhow!("adapter did not return sources"))
 }
 
-pub fn open_adapter_camera(command_line: &str, source: &CameraDescriptor) -> Result<AdapterCameraStream> {
+pub fn open_adapter_camera(
+    command_line: &str,
+    source: &CameraDescriptor,
+) -> Result<AdapterCameraStream> {
     let adapter_source_id = source
         .id
         .split_once("::")
@@ -96,9 +100,12 @@ pub fn open_adapter_camera(command_line: &str, source: &CameraDescriptor) -> Res
                 protocol_version: PROTOCOL_VERSION,
             },
         )?;
-        send_command(stdin, &AdapterCommand::Open {
-            source_id: adapter_source_id,
-        })?;
+        send_command(
+            stdin,
+            &AdapterCommand::Open {
+                source_id: adapter_source_id,
+            },
+        )?;
         send_command(stdin, &AdapterCommand::Start)?;
     }
 

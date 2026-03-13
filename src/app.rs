@@ -75,8 +75,16 @@ impl LatencyApp {
 
         self.available_sources = sources;
         self.selected_source = previous_selection
-            .filter(|selected| self.available_sources.iter().any(|source| &source.id == selected))
-            .or_else(|| self.available_sources.first().map(|source| source.id.clone()));
+            .filter(|selected| {
+                self.available_sources
+                    .iter()
+                    .any(|source| &source.id == selected)
+            })
+            .or_else(|| {
+                self.available_sources
+                    .first()
+                    .map(|source| source.id.clone())
+            });
     }
 
     fn probe_adapter(&mut self) {
@@ -87,11 +95,15 @@ impl LatencyApp {
 
         match camera::probe_adapter(self.adapter_command.trim()) {
             Ok(mut sources) => {
-                self.available_sources.retain(|source| !matches!(source.origin, CameraOrigin::Adapter { .. }));
+                self.available_sources
+                    .retain(|source| !matches!(source.origin, CameraOrigin::Adapter { .. }));
                 self.available_sources.append(&mut sources);
                 self.status_message = "Adapter probed successfully.".to_owned();
                 if self.selected_source.is_none() {
-                    self.selected_source = self.available_sources.first().map(|source| source.id.clone());
+                    self.selected_source = self
+                        .available_sources
+                        .first()
+                        .map(|source| source.id.clone());
                 }
             }
             Err(error) => {
@@ -198,7 +210,11 @@ impl LatencyApp {
     }
 
     fn update_pattern_texture(&mut self, ctx: &Context) {
-        let frame = render_frame(720, self.pattern_runtime.current_state(), self.current_pattern_mode());
+        let frame = render_frame(
+            720,
+            self.pattern_runtime.current_state(),
+            self.current_pattern_mode(),
+        );
         update_texture(
             ctx,
             &mut self.pattern_texture,
@@ -290,7 +306,11 @@ impl eframe::App for LatencyApp {
                     .selected_text(
                         self.selected_source
                             .as_ref()
-                            .and_then(|id| self.available_sources.iter().find(|source| &source.id == id))
+                            .and_then(|id| {
+                                self.available_sources
+                                    .iter()
+                                    .find(|source| &source.id == id)
+                            })
                             .map(|source| source.name.clone())
                             .unwrap_or_else(|| "None".to_owned()),
                     )
@@ -350,8 +370,7 @@ impl eframe::App for LatencyApp {
                 ));
                 ui.label(format!(
                     "Preview FPS {:.1} | Analysis FPS {:.1}",
-                    self.preview_rate.fps,
-                    self.analysis_rate.fps
+                    self.preview_rate.fps, self.analysis_rate.fps
                 ));
             });
 
@@ -460,7 +479,10 @@ impl RateCounter {
 }
 
 fn color_image_from_rgb(image: &RgbImage) -> ColorImage {
-    ColorImage::from_rgb([image.width() as usize, image.height() as usize], image.as_raw())
+    ColorImage::from_rgb(
+        [image.width() as usize, image.height() as usize],
+        image.as_raw(),
+    )
 }
 
 fn update_texture(

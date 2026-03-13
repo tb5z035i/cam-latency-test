@@ -178,7 +178,11 @@ fn calibration_match_score(
         PatternMode::Timestamp => false,
         PatternMode::Calibration => calibration_expected_dark(state),
     };
-    let expected = if expected_dark { black_mean } else { white_mean };
+    let expected = if expected_dark {
+        black_mean
+    } else {
+        white_mean
+    };
     (1.0 - (observed - expected).abs()).clamp(0.0, 1.0)
 }
 

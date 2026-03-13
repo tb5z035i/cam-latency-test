@@ -61,7 +61,11 @@ pub fn render_pattern(size_px: u32, state: u32, mode: PatternMode) -> RgbImage {
                 gx,
                 gy,
                 cell_size,
-                if is_dark { Rgb([10, 10, 10]) } else { Rgb([245, 245, 245]) },
+                if is_dark {
+                    Rgb([10, 10, 10])
+                } else {
+                    Rgb([245, 245, 245])
+                },
             );
         }
     }

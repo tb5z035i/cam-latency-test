@@ -33,7 +33,7 @@ pub struct AdapterFrame {
     pub height: u32,
     pub pixel_format: PixelFormat,
     pub sequence: u64,
-    pub timestamp_millis: Option<u128>,
+    pub timestamp_millis: Option<u64>,
     pub data_base64: String,
 }
 

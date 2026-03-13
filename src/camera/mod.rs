@@ -29,7 +29,7 @@ pub struct FramePacket {
     pub pixel_format: PixelFormat,
     pub sequence: u64,
     pub source_name: String,
-    pub timestamp_millis: Option<u128>,
+    pub timestamp_millis: Option<u64>,
     pub data: Vec<u8>,
 }
 

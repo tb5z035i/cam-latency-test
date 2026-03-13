@@ -48,7 +48,10 @@ pub fn list_native_sources() -> Result<Vec<CameraDescriptor>> {
             CameraDescriptor {
                 id: format!("native:{}", device.name),
                 name: device.name,
-                width: best_resolution.as_ref().map(|resolution| resolution.width).unwrap_or_default(),
+                width: best_resolution
+                    .as_ref()
+                    .map(|resolution| resolution.width)
+                    .unwrap_or_default(),
                 height: best_resolution
                     .as_ref()
                     .map(|resolution| resolution.height)
@@ -113,7 +116,7 @@ fn capture_loop(
             pixel_format,
             sequence,
             source_name: source_name.clone(),
-            timestamp_millis: Some(start.elapsed().as_millis()),
+            timestamp_millis: Some(start.elapsed().as_millis() as u64),
             data: converted,
         };
         sequence += 1;

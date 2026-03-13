@@ -31,7 +31,7 @@ pub fn rgb_to_gray(image: &RgbImage) -> GrayImage {
 }
 
 pub fn detect_roi(gray: &GrayImage) -> Option<DetectionCandidate> {
-    let threshold = otsu_level(gray).saturating_sub(8);
+    let threshold = otsu_level(gray).max(32);
     let mut mask = GrayImage::from_pixel(gray.width(), gray.height(), Luma([0]));
 
     for (x, y, pixel) in gray.enumerate_pixels() {
@@ -51,14 +51,20 @@ pub fn detect_roi(gray: &GrayImage) -> Option<DetectionCandidate> {
             continue;
         }
 
-        let entry = components.entry(label).or_insert_with(|| ComponentStats::new(x, y));
+        let entry = components
+            .entry(label)
+            .or_insert_with(|| ComponentStats::new(x, y));
         entry.update(x, y);
     }
 
     components
         .into_values()
         .filter_map(|component| component.to_candidate(image_area))
-        .max_by(|left, right| left.score.partial_cmp(&right.score).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|left, right| {
+            left.score
+                .partial_cmp(&right.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
 }
 
 pub fn rectify_rgb(image: &RgbImage, corners: &[PointF; 4], output_size: u32) -> Option<RgbImage> {
@@ -179,7 +185,12 @@ impl ComponentStats {
         let score = (self.area as f32) / (1.0 + squareness_penalty * 4.0);
 
         Some(DetectionCandidate {
-            corners: [self.top_left, self.top_right, self.bottom_right, self.bottom_left],
+            corners: [
+                self.top_left,
+                self.top_right,
+                self.bottom_right,
+                self.bottom_left,
+            ],
             score,
             area: self.area,
         })
